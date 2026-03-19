@@ -23,212 +23,242 @@ from sklearn.metrics import (
 )
 import joblib
 
-# 用於可解釋性分析
+# 用於可解釋性分析（本機 .py 不要用 !pip 語法）
 try:
     import shap
+    HAS_SHAP = True
 except ImportError:
-    !pip install shap
-    import shap
+    HAS_SHAP = False
+    print("shap 未安裝，將跳過 SHAP 圖。可執行: pip install shap")
 
 # 設定繪圖風格
 plt.style.use('ggplot')
 # %matplotlib inline
 
-"""讀取數據與結構檢查"""
 
-# 讀取資料
-train_df = pd.read_csv("train_df.csv")
-test_df = pd.read_csv("test_df.csv")
+def main():
+    """讀取數據與結構檢查"""
 
-print(f"訓練集維度: {train_df.shape}")
-print(f"測試集維度: {test_df.shape}")
+    # 讀取資料
+    train_df = pd.read_csv("train_df.csv")
+    test_df = pd.read_csv("test_df.csv")
 
-# 檢查標籤分佈 (status=1 代表人頭戶/黑名單)
-print("\n標籤分佈 (status):")
-print(train_df['status'].value_counts(normalize=True))
+    print(f"訓練集維度: {train_df.shape}")
+    print(f"測試集維度: {test_df.shape}")
 
-"""## 數據清洗與預處理策略
-在此階段，我們移除無關特徵（如 user_id）與模型無法直接處理的時間格式，並對缺失值進行填補。
+    # 檢查標籤分佈 (status=1 代表人頭戶/黑名單)
+    print("\n標籤分佈 (status):")
+    print(train_df['status'].value_counts(normalize=True))
 
-數據處理策略說明：
+    """## 數據清洗與預處理策略
+    在此階段，我們移除無關特徵（如 user_id）與模型無法直接處理的時間格式，並對缺失值進行填補。
 
-移除 ID：user_id 為唯一識別碼，不具統計意義。
+    數據處理策略說明：
 
-時間特徵轉換：時間戳記已在特徵工程階段轉換為間隔秒數（如 lvl1_minus_confirm_sec），故移除原始時間欄位。
+    移除 ID：user_id 為唯一識別碼，不具統計意義。
 
-缺失值填補：隨機森林對缺失值具備一定耐受性，但在 sklearn 中建議預填為 -1（代表該行為未發生）。
-"""
+    時間特徵轉換：時間戳記���在特徵工程階段轉換為間隔秒數（如 lvl1_minus_confirm_sec），故移除原始時間欄位。
 
-# 1. 分離目標變數
-y = train_df["status"]
+    缺失值填補：隨機森林對缺失值具備一定耐受性，但在 sklearn 中建議預填為 -1（代表該行為未發生）。
+    """
 
-# 2. 初步排除絕對不能進模型的欄位
-drop_cols = ["status", "user_id"] # user_id 是隨機 ID，不能當特徵
-X = train_df.drop(columns=drop_cols, errors="ignore").copy()
-test_X = test_df.drop(columns=["user_id"], errors="ignore").copy()
+    # 1. 分離目標變數
+    y = train_df["status"]
 
-# 3. 自動辨識並排除所有非數值欄位 (String, Object, Datetime)
-# 這是解決 ValueError: could not convert string to float 的關鍵
-numeric_cols = X.select_dtypes(include=['number']).columns.tolist()
-non_numeric_cols = X.select_dtypes(exclude=['number']).columns.tolist()
+    # 2. 初步排除絕對不能進模型的欄位
+    drop_cols = ["status", "user_id"]  # user_id 是隨機 ID，不能當特徵
+    X = train_df.drop(columns=drop_cols, errors="ignore").copy()
+    test_X = test_df.drop(columns=["user_id"], errors="ignore").copy()
 
-print(f"✅ 保留的數值特徵數量: {len(numeric_cols)}")
-print(f"❌ 排除的非數值特徵: {non_numeric_cols}")
+    # 3. 自動辨識並排除所有非數值欄位 (String, Object, Datetime)
+    # 這是解決 ValueError: could not convert string to float 的關鍵
+    numeric_cols = X.select_dtypes(include=['number']).columns.tolist()
+    non_numeric_cols = X.select_dtypes(exclude=['number']).columns.tolist()
 
-X = X[numeric_cols].copy()
-test_X = test_X[numeric_cols].copy()
+    print(f"✅ 保留的數值特徵數量: {len(numeric_cols)}")
+    print(f"❌ 排除的非數值特徵: {non_numeric_cols}")
 
-# 4. 處理缺失值 (隨機森林/XGBoost 建議填入一個明顯的離群值如 -1)
-X = X.fillna(-1)
-test_X = test_X.fillna(-1)
+    X = X[numeric_cols].copy()
+    test_X = test_X[numeric_cols].copy()
 
-# 再次確認是否還有 String
-if X.apply(lambda s: pd.to_numeric(s, errors='coerce').notnull().all()).all():
-    print("🚀 所有欄位已成功轉換為數值，可以開始訓練！")
-else:
-    print("⚠️ 警告：仍有欄位包含非數值資料，請檢查數據內容。")
+    # 4. 處理缺失值 (隨機森林/XGBoost 建議填入一個明顯的離群值如 -1)
+    X = X.fillna(-1)
+    test_X = test_X.fillna(-1)
 
-"""## 特徵工程邏輯概述 (Markdown)
-根據幣託命題文件，我們著重挖掘以下維度：
+    # 再次確認是否還有 String
+    if X.apply(lambda s: pd.to_numeric(s, errors='coerce').notnull().all()).all():
+        print("🚀 所有欄位已成功轉換為數值，可以開始訓練！")
+    else:
+        print("⚠️ 警告：仍有欄位包含非數值資料，請檢查數據內容。")
 
-法幣進出比 (Fiat Inflow/Outflow Ratio)：捕捉資金進站後是否迅速轉出。
+    """## 特徵工程邏輯概述 (Markdown)
+    根據幣託命題文件，我們著重挖掘以下維度：
 
-快進快出之滯留時間：人頭戶通常不長期持有資產，計算充值與提領間的 active_span_sec。
+    法幣進出比 (Fiat Inflow/Outflow Ratio)：捕捉資金進站後是否迅速轉出。
 
-KYC 與能級不對稱：例如低年齡或職業與大額交易金額（twd_total_amount）的相關性。
+    快進快出之滯留時間：人頭戶通常不長期持有資產，計算充值與提領間的 active_span_sec。
 
-IP 異常：不同交易行為間的 IP 跳動頻率。
+    KYC 與能級不對稱：例如低年齡或職業與大額交易金額（twd_total_amount）的相關性。
 
-## 訓練集與驗證集切分
-使用 分層抽樣 (Stratified Split) 處理高度不平衡數據。
-"""
+    IP 異常：不同交易行為間的 IP 跳動頻率。
 
-# 切分訓練與驗證集
-X_train, X_valid, y_train, y_valid = train_test_split(
-    X, y, test_size=0.2, random_state=42, stratify=y
-)
+    ## 訓練集與驗證集切分
+    使用 分層抽樣 (Stratified Split) 處理高度不平衡數據。
+    """
 
-# 計算不平衡比例
-ratio = (y == 0).sum() / (y == 1).sum()
+    # 切分訓練與驗證集
+    X_train, X_valid, y_train, y_valid = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
 
-# 建立 XGBoost
-xgb_model = xgb.XGBClassifier(
-    n_estimators=300,
-    max_depth=6,
-    learning_rate=0.05,
-    scale_pos_weight=ratio,
-    use_label_encoder=False,
-    eval_metric='aucpr',
-    random_state=42,
-    tree_method='hist'
-)
+    # 計算不平衡比例
+    ratio = (y == 0).sum() / (y == 1).sum()
 
-# 訓練
-xgb_model.fit(X_train, y_train)
-print("模型訓練完成！")
+    # 建立 XGBoost（這段保留原本，但其實後面主要用 rf_model）
+    xgb_model = xgb.XGBClassifier(
+        n_estimators=300,
+        max_depth=6,
+        learning_rate=0.05,
+        scale_pos_weight=ratio,
+        use_label_encoder=False,
+        eval_metric='aucpr',
+        random_state=42,
+        tree_method='hist'
+    )
 
-"""## 建立隨機森林風險模型
-隨機森林能有效捕捉非線性特徵關係，我們設定 class_weight='balanced' 以自動調整權重。
-"""
+    # 訓練
+    xgb_model.fit(X_train, y_train)
+    print("模型訓練完成！")
 
-# 建立隨機森林分類器
-rf_model = RandomForestClassifier(
-    n_estimators=300,
-    max_depth=10,
-    min_samples_leaf=10,
-    class_weight='balanced', # 自動處理樣本不平衡
-    random_state=42,
-    n_jobs=-1,
-    verbose=1
-)
+    """## 建立隨機森林風險模型
+    隨機森林能有效捕捉非線性特徵關係，我們設定 class_weight='balanced' 以自動調整權重。
+    """
 
-rf_model.fit(X_train, y_train)
+    # 建立隨機森林分類器
+    rf_model = RandomForestClassifier(
+        n_estimators=300,
+        max_depth=10,
+        min_samples_leaf=10,
+        class_weight='balanced',  # 自動處理樣本不平衡
+        random_state=42,
+        n_jobs=-1,
+        verbose=1
+    )
 
-"""## 模型評估與風險因子可視化
-展示特徵貢獻度，協助合規團隊識別關鍵風險因子。
-"""
+    rf_model.fit(X_train, y_train)
 
-# 預測機率
-valid_prob = rf_model.predict_proba(X_valid)[:, 1]
+    """## 模型評估與風險因子可視化
+    展示特徵貢獻度，協助合規團隊識別關鍵風險因子。
+    """
 
-# 繪製特徵重要性 (Feature Importance)
-importances = rf_model.feature_importances_
-indices = np.argsort(importances)[-20:] # 取前20大特徵
+    # 預測機率
+    valid_prob = rf_model.predict_proba(X_valid)[:, 1]
 
-plt.figure(figsize=(10, 8))
-plt.title('Top 20 Risk Factors (Feature Importance)')
-plt.barh(range(len(indices)), importances[indices], align='center')
-plt.yticks(range(len(indices)), [X.columns[i] for i in indices])
-plt.xlabel('Relative Importance')
-plt.show()
+    # 繪製特徵重要性 (Feature Importance)
+    importances = rf_model.feature_importances_
+    indices = np.argsort(importances)[-20:]  # 取前20大特徵
 
-"""## 閾值判定與 F1-score 優化 (Threshold Tuning)
-在詐騙偵測中，我們需平衡精確率 (Precision) 與召回率 (Recall)。
-"""
+    plt.figure(figsize=(10, 8))
+    plt.title('Top 20 Risk Factors (Feature Importance)')
+    plt.barh(range(len(indices)), importances[indices], align='center')
+    plt.yticks(range(len(indices)), [X.columns[i] for i in indices])
+    plt.xlabel('Relative Importance')
+    plt.tight_layout()
+    plt.show()
 
-# 找出最佳 F1 閾值
-precisions, recalls, thresholds = precision_recall_curve(y_valid, valid_prob)
-f1_scores = 2 * (precisions * recalls) / (precisions + recalls + 1e-10)
-best_idx = np.argmax(f1_scores)
-best_threshold = thresholds[best_idx]
+    """## 閾值判定與 F1-score 優化 (Threshold Tuning)
+    在詐騙偵測中，我們需平衡精確率 (Precision) 與召回率 (Recall)。
+    """
 
-print(f"最佳閾值 (Best Threshold): {best_threshold:.4f}")
-print(f"最高驗證集 F1-score: {f1_scores[best_idx]:.4f}")
+    # 找出最佳 F1 閾值（修正：precision_recall_curve 的 thresholds 比 precisions 少 1）
+    precisions, recalls, thresholds = precision_recall_curve(
+        y_valid, valid_prob)
 
-# 使用最佳閾值進行分類判定
-valid_pred = (valid_prob >= best_threshold).astype(int)
+    if len(thresholds) == 0:
+        best_threshold = 0.5
+        print("[WARN] precision_recall_curve returned empty thresholds, fallback to 0.5")
+    else:
+        # 對齊到 thresholds 長度
+        precisions_ = precisions[:-1]
+        recalls_ = recalls[:-1]
+        f1_scores = 2 * (precisions_ * recalls_) / \
+            (precisions_ + recalls_ + 1e-10)
+        best_idx = int(np.argmax(f1_scores))
+        best_threshold = float(thresholds[best_idx])
 
-print("\n混淆矩陣 (Confusion Matrix):")
-print(confusion_matrix(y_valid, valid_pred))
-print("\n分類報告 (Classification Report):")
-print(classification_report(y_valid, valid_pred))
+        print(f"最佳閾值 (Best Threshold): {best_threshold:.4f}")
+        print(f"最高驗證集 F1-score: {float(f1_scores[best_idx]):.4f}")
 
-"""## AI 可解釋性分析 (SHAP)
-生成「風險診斷書」核心內容，說明模型為何將該帳戶判定為高風險。
-"""
+    # 使用最佳閾值進行分類判定
+    valid_pred = (valid_prob >= best_threshold).astype(int)
 
-# 1. 重新計算 SHAP 值（確保對應到正確的模型）
-explainer = shap.TreeExplainer(xgb_model)
+    print("\n混淆矩陣 (Confusion Matrix):")
+    print(confusion_matrix(y_valid, valid_pred))
+    print("\n分類報告 (Classification Report):")
+    print(classification_report(y_valid, valid_pred))
+    print(f"F1: {f1_score(y_valid, valid_pred, zero_division=0):.4f}")
+    # （可選）補上 AUC/Precision/Recall 方便檢查
+    try:
+        print(f"AUC: {roc_auc_score(y_valid, valid_prob):.4f}")
+    except Exception:
+        pass
+    print(
+        f"Precision: {precision_score(y_valid, valid_pred, zero_division=0):.4f}")
+    print(f"Recall: {recall_score(y_valid, valid_pred, zero_division=0):.4f}")
 
-# 為了加快速度與避免記憶體問題，取前 500 筆驗證集資料
-X_sample = X_valid.iloc[:500, :]
-shap_values_sample = explainer.shap_values(X_sample)
+    """## AI 可解釋性分析 (SHAP)
+    生成「風險診斷書」核心內容，說明模型為何將該帳戶判定為高風險。
+    """
 
-# 2. 自動處理 SHAP 輸出格式 (XGBoost vs Random Forest 差異)
-# 如果 shap_values 是 list (Random Forest)，取第二個元素 [1]
-# 如果 shap_values 是 ndarray (XGBoost)，直接使用
-if isinstance(shap_values_sample, list):
-    shap_to_plot = shap_values_sample[1]
-else:
-    shap_to_plot = shap_values_sample
+    if HAS_SHAP:
+        # 用 RandomForest 做 SHAP 會比較合理；原檔用 xgb_model 我保留但改成 rf_model
+        # 如果你堅持要解釋 xgb_model，把 rf_model 改回 xgb_model 即可
+        explainer = shap.TreeExplainer(rf_model)
 
-# 3. 繪製摘要圖
-plt.figure(figsize=(10, 6))
-shap.summary_plot(shap_to_plot, X_sample, plot_type="dot")
+        # 為了加快速度與避免記憶體問題，取前 500 筆驗證集資料
+        X_sample = X_valid.iloc[:500, :]
+        shap_values_sample = explainer.shap_values(X_sample)
 
-"""## 產出預測結果與提交檔案
-計算測試集的風險分數並生成最終 submission.csv。
-"""
+        # 自動處理 SHAP 輸出格式
+        if isinstance(shap_values_sample, list):
+            shap_to_plot = shap_values_sample[1]
+        else:
+            shap_to_plot = shap_values_sample
 
-# 預測測試集機率
-test_prob = rf_model.predict_proba(test_X)[:, 1]
-# 依據最佳閾值判定是否為黑名單 (1) 或正常 (0)
-test_pred = (test_prob >= best_threshold).astype(int)
+        plt.figure(figsize=(10, 6))
+        shap.summary_plot(shap_to_plot, X_sample, plot_type="dot")
+    else:
+        print("[Info] Skip SHAP plot.")
 
-# 建立提交檔案
-submission = pd.DataFrame({
-    "user_id": test_df["user_id"],
-    "probability": test_prob,
-    "status": test_pred
-})
+    """## 產出預測結果與提交檔案
+    計算測試集的風險分數並生成最終 submission.csv。
+    """
 
-submission.to_csv("submission.csv", index=False)
-print("成功產出 submission.csv！")
+    # 預測測試集機率
+    test_prob = rf_model.predict_proba(test_X)[:, 1]
+    # 依據最佳閾值判定是否為黑名單 (1) 或正常 (0)
+    test_pred = (test_prob >= best_threshold).astype(int)
 
-# 觀察風險分數分佈
-plt.figure(figsize=(8, 5))
-sns.histplot(test_prob, bins=50, kde=True)
-plt.axvline(best_threshold, color='red', linestyle='--', label=f'Threshold: {best_threshold:.2f}')
-plt.title("Distribution of Risk Scores (Probability)")
-plt.legend()
-plt.show()
+    # 建立提交檔案
+    submission = pd.DataFrame({
+        "user_id": test_df["user_id"],
+        "probability": test_prob,
+        "status": test_pred
+    })
+
+    submission.to_csv("submission.csv", index=False)
+    print("成功產出 submission.csv！")
+
+    # 觀察風險分數分佈
+    plt.figure(figsize=(8, 5))
+    sns.histplot(test_prob, bins=50, kde=True)
+    plt.axvline(best_threshold, color='red', linestyle='--',
+                label=f'Threshold: {best_threshold:.2f}')
+    plt.title("Distribution of Risk Scores (Probability)")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+
+if __name__ == "__main__":
+    main()

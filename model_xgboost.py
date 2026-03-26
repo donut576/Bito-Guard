@@ -697,6 +697,28 @@ def run_experiment(train_df, test_df, mode="full", out_dir="output", use_optuna=
 
     print(f"[INFO] mode={mode} done. submission saved to {mode_out_dir}/submission.csv")
 
+    # --- 儲存 model artifact（本地 + 可選上傳 S3）---
+    import pickle
+    artifact = {
+        "model": model,
+        "metadata": {"mode": mode, "best_threshold": best_th, "features": list(X.columns)},
+        "training_stats": metrics,
+    }
+    local_model_path = os.path.join(mode_out_dir, "model.pkl")
+    with open(local_model_path, "wb") as f:
+        pickle.dump(artifact, f)
+    print(f"[INFO] model artifact saved to {local_model_path}")
+
+    s3_bucket = os.environ.get("AML_S3_BUCKET")
+    if s3_bucket:
+        try:
+            from app.services.s3_helper import upload_file
+            s3_key = f"models/model_registry/{mode}/model.pkl"
+            upload_file(local_model_path, s3_bucket, s3_key)
+            print(f"[INFO] model uploaded to s3://{s3_bucket}/{s3_key}")
+        except Exception as e:  # noqa: BLE001
+            print(f"[WARN] S3 upload skipped: {e}")
+
     return {
         "mode"                : mode,
         "model"               : model,

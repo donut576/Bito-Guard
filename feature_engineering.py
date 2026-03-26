@@ -1265,6 +1265,18 @@ def build_feature_dataset() -> tuple:
     print(f"  feature_df    shape : {feature_df.shape}")
     print("  已輸出：train_feature_v2.csv / test_feature_v2.csv / feature_full_v2.csv")
 
+    # --- 可選：上傳 CSV 到 S3 ---
+    import os
+    s3_bucket = os.environ.get("AML_S3_BUCKET")
+    if s3_bucket:
+        try:
+            from app.services.s3_helper import upload_file
+            for fname in ["train_feature.csv", "test_feature.csv", "feature_full.csv"]:
+                upload_file(fname, s3_bucket, f"data/{fname}")
+                print(f"  uploaded {fname} → s3://{s3_bucket}/data/{fname}")
+        except Exception as e:  # noqa: BLE001
+            print(f"  [WARN] S3 upload skipped: {e}")
+
     return train_feature, test_feature, feature_df
 
 

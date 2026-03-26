@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 3000,
+    allowedHosts: ['dicotyledonous-nonsegmentary-asha.ngrok-free.dev'],
     proxy: {
       '/metrics': 'http://localhost:8000',
       '/features': 'http://localhost:8000',

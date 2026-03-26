@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApi } from '../hooks/useApi';
 import { ENDPOINTS } from '../api/endpoints';
 import GlowCard from './shared/GlowCard';
@@ -6,6 +6,14 @@ import ApiPill from './shared/ApiPill';
 
 const FraudExplanationPanel = () => {
   const fraudData = useApi(ENDPOINTS.fraud_explanation(10));
+  const [selectedUserId, setSelectedUserId] = useState(null);
+
+  const users = fraudData.data?.explanations || [];
+  const selectedUser = useMemo(() => {
+    if (!users || users.length === 0) return null;
+    if (!selectedUserId) return users[0];
+    return users.find(user => user.user_id === selectedUserId) || users[0];
+  }, [users, selectedUserId]);
 
   const formatFeatures = (features) => {
     if (!features || features === '') return [];
@@ -43,38 +51,46 @@ const FraudExplanationPanel = () => {
           </div>
 
           <div style={{ maxHeight: 400, overflowY: 'auto' }}>
-            {fraudData.data?.explanations?.map((user, index) => (
-              <div key={user.user_id} style={{
-                padding: '12px',
-                marginBottom: 8,
-                borderRadius: 8,
-                background: 'rgba(255, 51, 102, 0.05)',
-                border: '1px solid rgba(255, 51, 102, 0.2)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between'
-              }}>
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
-                    用戶 {user.user_id}
+            {users.length > 0 ? users.map((user, index) => {
+              const active = user.user_id === selectedUser?.user_id;
+              return (
+                <div
+                  key={user.user_id}
+                  onClick={() => setSelectedUserId(user.user_id)}
+                  style={{
+                    cursor: 'pointer',
+                    padding: '12px',
+                    marginBottom: 8,
+                    borderRadius: 8,
+                    background: active ? 'rgba(255, 51, 102, 0.2)' : 'rgba(255, 51, 102, 0.05)',
+                    border: active ? '1px solid rgba(255, 51, 102, 0.35)' : '1px solid rgba(255, 51, 102, 0.2)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: active ? 'var(--neon-cyan)' : 'var(--text-primary)' }}>
+                      用戶 {user.user_id}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                      風險等級: <span style={{
+                        color: getRiskColor(user.fraud_prob),
+                        fontWeight: 600
+                      }}>
+                        {user.fraud_prob_percent}%
+                      </span>
+                    </div>
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                    風險等級: <span style={{
-                      color: getRiskColor(user.fraud_prob),
-                      fontWeight: 600
-                    }}>
-                      {user.fraud_prob_percent}%
-                    </span>
-                  </div>
+                  <div style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    background: getRiskColor(user.fraud_prob)
+                  }} />
                 </div>
-                <div style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: '50%',
-                  background: getRiskColor(user.fraud_prob)
-                }} />
-              </div>
-            )) || (
+              );
+            }) : (
               <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 20 }}>
                 載入中...
               </div>
@@ -94,7 +110,7 @@ const FraudExplanationPanel = () => {
           </div>
 
           <div style={{ maxHeight: 400, overflowY: 'auto' }}>
-            {fraudData.data?.explanations?.[0] && (
+            {selectedUser ? (
               <div>
                 <div style={{
                   padding: '12px',
@@ -104,17 +120,17 @@ const FraudExplanationPanel = () => {
                   border: '1px solid rgba(255, 153, 51, 0.2)'
                 }}>
                   <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>
-                    用戶 {fraudData.data.explanations[0].user_id} 的風險特徵
+                    用戶 {selectedUser.user_id} 的風險特徵
                   </div>
 
                   {/* KYC Features */}
-                  {formatFeatures(fraudData.data.explanations[0].kyc_features).length > 0 && (
+                  {formatFeatures(selectedUser.kyc_features).length > 0 && (
                     <div style={{ marginBottom: 8 }}>
                       <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--neon-cyan)', marginBottom: 4 }}>
                         👤 用戶基本資訊
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                        {formatFeatures(fraudData.data.explanations[0].kyc_features).map((feature, i) => (
+                        {formatFeatures(selectedUser.kyc_features).map((feature, i) => (
                           <div key={i} style={{ marginBottom: 2 }}>• {feature}</div>
                         ))}
                       </div>
@@ -122,13 +138,13 @@ const FraudExplanationPanel = () => {
                   )}
 
                   {/* TWD Features */}
-                  {formatFeatures(fraudData.data.explanations[0].twd_features).length > 0 && (
+                  {formatFeatures(selectedUser.twd_features).length > 0 && (
                     <div style={{ marginBottom: 8 }}>
                       <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--neon-green)', marginBottom: 4 }}>
                         💰 台幣出入金
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                        {formatFeatures(fraudData.data.explanations[0].twd_features).map((feature, i) => (
+                        {formatFeatures(selectedUser.twd_features).map((feature, i) => (
                           <div key={i} style={{ marginBottom: 2 }}>• {feature}</div>
                         ))}
                       </div>
@@ -136,13 +152,13 @@ const FraudExplanationPanel = () => {
                   )}
 
                   {/* Crypto Features */}
-                  {formatFeatures(fraudData.data.explanations[0].crypto_features).length > 0 && (
+                  {formatFeatures(selectedUser.crypto_features).length > 0 && (
                     <div style={{ marginBottom: 8 }}>
                       <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--neon-purple)', marginBottom: 4 }}>
                         ₿ 虛擬貨幣轉帳
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                        {formatFeatures(fraudData.data.explanations[0].crypto_features).map((feature, i) => (
+                        {formatFeatures(selectedUser.crypto_features).map((feature, i) => (
                           <div key={i} style={{ marginBottom: 2 }}>• {feature}</div>
                         ))}
                       </div>
@@ -150,13 +166,13 @@ const FraudExplanationPanel = () => {
                   )}
 
                   {/* Wallet Features */}
-                  {formatFeatures(fraudData.data.explanations[0].wallet_features).length > 0 && (
+                  {formatFeatures(selectedUser.wallet_features).length > 0 && (
                     <div style={{ marginBottom: 8 }}>
                       <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--neon-yellow)', marginBottom: 4 }}>
                         👛 錢包風險
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                        {formatFeatures(fraudData.data.explanations[0].wallet_features).map((feature, i) => (
+                        {formatFeatures(selectedUser.wallet_features).map((feature, i) => (
                           <div key={i} style={{ marginBottom: 2 }}>• {feature}</div>
                         ))}
                       </div>
@@ -164,13 +180,13 @@ const FraudExplanationPanel = () => {
                   )}
 
                   {/* Cross Features */}
-                  {formatFeatures(fraudData.data.explanations[0].cross_features).length > 0 && (
+                  {formatFeatures(selectedUser.cross_features).length > 0 && (
                     <div>
                       <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--neon-pink)', marginBottom: 4 }}>
                         🔗 綜合風險指標
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                        {formatFeatures(fraudData.data.explanations[0].cross_features).map((feature, i) => (
+                        {formatFeatures(selectedUser.cross_features).map((feature, i) => (
                           <div key={i} style={{ marginBottom: 2 }}>• {feature}</div>
                         ))}
                       </div>
@@ -182,7 +198,7 @@ const FraudExplanationPanel = () => {
                   點擊上方用戶查看不同人的風險特徵
                 </div>
               </div>
-            ) || (
+            ) : (
               <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 20 }}>
                 載入中...
               </div>

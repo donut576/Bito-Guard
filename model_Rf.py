@@ -403,7 +403,7 @@ def split_data(X, y, raw_train_df, split_time_col=None, test_size=0.2):
 # =========================================================
 # 8. 單一實驗函式
 # =========================================================
-def run_experiment(train_df, test_df, mode="full", out_dir="output_rf_v1", use_optuna=True):
+def run_experiment(train_df, test_df, mode="full", out_dir="output_rf", use_optuna=True):
     print("=" * 100)
     print(f"[INFO] Running mode = {mode}  |  use_optuna = {use_optuna}")
 
@@ -480,9 +480,38 @@ def run_experiment(train_df, test_df, mode="full", out_dir="output_rf_v1", use_o
     plot_threshold_curve(threshold_df, best_th, title=f"Threshold Curve ({mode})")
     plot_shap_summary(model, X_valid, sample_size=300)
 
+    # --- 測試集預測 & submission ---
     test_prob = model.predict_proba(test_X)[:, 1]
     test_pred = (test_prob >= best_th).astype(int)
 
+    # 比賽提交檔（0/1）
+    pd.DataFrame({
+        "user_id": test_df[ID_COL],
+        "status" : test_pred,
+    }).to_csv(os.path.join(mode_out_dir, "submission.csv"), index=False)
+
+    # 給 ensemble / 投票用的測試集完整分數
+    pd.DataFrame({
+        "user_id"  : test_df[ID_COL],
+        "pred_prob": test_prob,
+        "pred_label": test_pred,
+        "best_threshold": best_th,
+        "mode": mode,
+    }).to_csv(os.path.join(mode_out_dir, "test_scores.csv"), index=False)
+    # 比賽提交檔（0/1）
+    pd.DataFrame({
+        "user_id": test_df[ID_COL],
+        "status" : test_pred,
+    }).to_csv(os.path.join(mode_out_dir, "submission.csv"), index=False)
+
+    # 給 ensemble / 投票用的測試集完整分數
+    pd.DataFrame({
+        "user_id"  : test_df[ID_COL],
+        "pred_prob": test_prob,
+        "pred_label": test_pred,
+        "best_threshold": best_th,
+        "mode": mode,
+    }).to_csv(os.path.join(mode_out_dir, "test_scores.csv"), index=False)
     pd.DataFrame({
         "user_id": test_df[ID_COL],
         "status" : test_pred,
@@ -520,7 +549,7 @@ def run_experiment(train_df, test_df, mode="full", out_dir="output_rf_v1", use_o
 def main(
     train_path="train_feature.csv",
     test_path="test_feature.csv",
-    out_dir="output_rf_v1",
+    out_dir="output_rf",
     use_optuna=True,
 ):
     train_df = pd.read_csv(train_path)

@@ -1256,17 +1256,55 @@ def build_feature_dataset() -> tuple:
         on="user_id", how="left"
     )
 
+    # ------------------------------------------------------------
+    # 額外建立：ID + STATUS 對照表
+    # ------------------------------------------------------------
+
+    # 1) train 的 user_id + 真實 status
+    train_id_status = train_feature[["user_id", "status"]].copy()
+
+    # 2) test 的 user_id + status
+    # predict_label 通常沒有真實 status，所以這裡補空值欄位，方便格式一致
+    if "status" in test_feature.columns:
+        test_id_status = test_feature[["user_id", "status"]].copy()
+    else:
+        test_id_status = test_feature[["user_id"]].copy()
+        test_id_status["status"] = np.nan
+
+    # 3) 全部 user_id + status（train 有值，test 為 NaN）
+    all_id_status = pd.concat(
+        [train_id_status, test_id_status],
+        ignore_index=True
+    )
+
+    # ------------------------------------------------------------
+    # 輸出原本的特徵表
+    # ------------------------------------------------------------
     train_feature.to_csv("train_feature.csv", index=False)
     test_feature.to_csv("test_feature.csv",   index=False)
     feature_df.to_csv("feature_full.csv",     index=False)
 
-    print(f"  train_feature shape : {train_feature.shape}")
-    print(f"  test_feature  shape : {test_feature.shape}")
-    print(f"  feature_df    shape : {feature_df.shape}")
-    print("  已輸出：train_feature_v2.csv / test_feature_v2.csv / feature_full_v2.csv")
+    # ------------------------------------------------------------
+    # 輸出新增的三張表
+    # ------------------------------------------------------------
+    train_id_status.to_csv("train_id_status.csv", index=False)
+    test_id_status.to_csv("test_id_status.csv",   index=False)
+    all_id_status.to_csv("all_id_status.csv",     index=False)
 
-    return train_feature, test_feature, feature_df
+    print(f"  train_feature shape   : {train_feature.shape}")
+    print(f"  test_feature shape    : {test_feature.shape}")
+    print(f"  feature_df shape      : {feature_df.shape}")
+    print(f"  train_id_status shape : {train_id_status.shape}")
+    print(f"  test_id_status shape  : {test_id_status.shape}")
+    print(f"  all_id_status shape   : {all_id_status.shape}")
 
+    print("  已輸出：")
+    print("  - train_feature.csv")
+    print("  - test_feature.csv")
+    print("  - feature_full.csv")
+    print("  - train_id_status.csv")
+    print("  - test_id_status.csv")
+    print("  - all_id_status.csv")
 
 if __name__ == "__main__":
     build_feature_dataset()

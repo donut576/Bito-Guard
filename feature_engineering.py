@@ -25,33 +25,57 @@ pd.set_option("display.width", 200)
 # ============================================================
 # 1. 通用函式
 # ============================================================
-
 def fetch_table_paginated(name: str, batch_size: int = 50000, sleep_sec: float = 0.15) -> pd.DataFrame:
     """
     分頁抓取 API 資料，直到回傳空資料為止。
 
-    為什麼要分頁？
-    API 單次回傳有筆數上限，若資料量大（如 crypto_transfer 可能有數百萬筆），
-    一次性抓取會 timeout 或 OOM，分頁可以穩定地把全量資料拉回來。
+    📌 資料來源：
+    Swagger UI（查看欄位與結構）：
+    https://aws-event-docs.bitopro.com/
+
+    API Endpoint（實際抓資料）：
+    https://aws-event-api.bitopro.com/
+
+    📌 說明：
+    - Swagger UI 用來查詢有哪些 table / 欄位
+    - API endpoint 才是實際拿資料的地方
+
+    📌 為什麼要分頁？
+    API 單次回傳有筆數上限，若資料量大（如 crypto_transfer 可達數十萬筆以上），
+    一次抓取容易 timeout 或記憶體爆掉，因此採用 offset + limit 分頁拉取。
+
+    📌 參數：
+    - name: table 名稱（如 user_info, twd_transfer）
+    - batch_size: 每次抓取筆數
+    - sleep_sec: 每次請求間隔，避免打爆 API
     """
-    all_dfs, offset = [], 0
+
+    all_dfs = []
+    offset = 0
+
     while True:
         url = f"https://aws-event-api.bitopro.com/{name}?limit={batch_size}&offset={offset}"
+
         r = requests.get(url, timeout=60)
         r.raise_for_status()
         data = r.json()
+
         if len(data) == 0:
             print(f"{name}: stop at offset={offset}")
             break
+
         df_batch = pd.DataFrame(data)
         all_dfs.append(df_batch)
+
         print(f"{name}: fetched {len(df_batch)} rows, offset={offset}")
+
         offset += batch_size
         time.sleep(sleep_sec)
+
     final_df = pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
     print(f"{name}: final shape = {final_df.shape}")
-    return final_df
 
+    return final_df
 
 def get_existing_col(df: pd.DataFrame, candidates: list) -> object:
     """

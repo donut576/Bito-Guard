@@ -667,6 +667,20 @@ def run_experiment(train_df, test_df, mode="full", out_dir="output", use_optuna=
     test_prob = model.predict_proba(test_X)[:, 1]
     test_pred = (test_prob >= best_th).astype(int)
 
+    # 比賽提交檔（0/1）
+    pd.DataFrame({
+        "user_id": test_df[ID_COL],
+        "status" : test_pred,
+    }).to_csv(os.path.join(mode_out_dir, "submission.csv"), index=False)
+
+    # 給 ensemble / 投票用的測試集完整分數
+    pd.DataFrame({
+        "user_id"  : test_df[ID_COL],
+        "pred_prob": test_prob,
+        "pred_label": test_pred,
+        "best_threshold": best_th,
+        "mode": mode,
+    }).to_csv(os.path.join(mode_out_dir, "test_scores.csv"), index=False)
     pd.DataFrame({
         "user_id": test_df[ID_COL],
         "status" : test_pred,
@@ -699,7 +713,7 @@ def run_experiment(train_df, test_df, mode="full", out_dir="output", use_optuna=
 def main(
     train_path="train_feature.csv",
     test_path="test_feature.csv",
-    out_dir="output_xgb_v2",
+    out_dir="output_xgb",
     use_optuna=True,   # 設為 False 可跳過 Optuna，直接用手動參數（速度快很多）
 ):
     # --- 讀資料 ---

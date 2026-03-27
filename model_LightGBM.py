@@ -160,42 +160,26 @@ def focal_loss_lgb(alpha=0.25, gamma=2.0):
 
 def apply_smote(X_train, y_train, sampling_strategy=0.1, random_state=42):
     """
-    SMOTE（Synthetic Minority Over-sampling Technique）過採樣。
-    
-    為什麼需要 SMOTE？
-    - 你的正樣本只有 ~3.2%，模型很容易學到「全部預測 0 就有 96.8% 準確率」的捷徑
-    - scale_pos_weight 只是調整 loss 權重，但正樣本的特徵空間仍然稀疏
-    - SMOTE 在正樣本的特徵空間裡「插值」生成合成樣本，讓模型看到更多正樣本的變化
-    
-    SMOTE 的原理：
-    - 對每個正樣本，找它的 K 個最近鄰（也是正樣本）
-    - 在這個正樣本和它的某個鄰居之間隨機插值，生成一個新的合成正樣本
-    - 這樣生成的樣本比純複製（over-sampling）更有多樣性
-    
-    注意事項：
-    - 只在訓練集做，驗證集和測試集絕對不能做（否則會 data leakage）
-    - sampling_strategy=0.1 代表把正樣本比例提升到 10%（原本 ~3.2%）
-    - 不要設太高（如 0.5），合成樣本太多反而會引入噪音
-    
-    參數：
-        sampling_strategy : 過採樣後正樣本佔總樣本的比例目標
-        random_state      : 隨機種子，確保可重現
-    
-    回傳：
-        X_res, y_res : 過採樣後的訓練特徵和標籤
+    SMOTE（Synthetic Minority Over-sampling Technique）過採樣
+    只對訓練集做，避免 data leakage
     """
     if not HAS_SMOTE:
         print("[WARN] SMOTE 未安裝，跳過過採樣，使用原始訓練集")
         return X_train, y_train
 
     print(f"[INFO] SMOTE 前：正樣本 {y_train.sum()} / 總樣本 {len(y_train)} ({y_train.mean():.4f})")
-    sm = SMOTE(sampling_strategy=sampling_strategy, random_state=random_state, n_jobs=-1)
+
+    # 新版 imbalanced-learn 的 SMOTE 已不支援 n_jobs 參數
+    sm = SMOTE(
+        sampling_strategy=sampling_strategy,
+        random_state=random_state
+    )
+
     X_res, y_res = sm.fit_resample(X_train, y_train)
     y_res = pd.Series(y_res, name=y_train.name)
+
     print(f"[INFO] SMOTE 後：正樣本 {y_res.sum()} / 總樣本 {len(y_res)} ({y_res.mean():.4f})")
     return X_res, y_res
-
-
 # =========================================================
 # 3. Threshold 搜尋
 # =========================================================

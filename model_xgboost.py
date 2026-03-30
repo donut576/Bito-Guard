@@ -576,14 +576,33 @@ def run_experiment(train_df, test_df, mode="full", out_dir="output", use_optuna=
     )
 
     # --- 計算正負樣本比例 ---
-    # scale_pos_weight = 負樣本數 / 正樣本數
-    # 告訴模型正樣本（黑名單）比較稀少，要給予更高的懲罰權重
     scale_pos_weight = (y_train == 0).sum() / max((y_train == 1).sum(), 1)
 
     print(f"[INFO] split_method    : {split_method}")
     print(f"[INFO] scale_pos_weight: {scale_pos_weight:.4f}")
     print(f"[INFO] train shape     : {X_train.shape}, valid shape: {X_valid.shape}")
     print(f"[INFO] train pos rate  : {y_train.mean():.4f}, valid pos rate: {y_valid.mean():.4f}")
+
+    # ---------------------------------------------------------
+    # 特徵篩選：先用預設參數快速訓練一次，移除 importance=0 的特徵
+    # ---------------------------------------------------------
+    print("[INFO] 第一輪：快速訓練找出 importance=0 的特徵...")
+    _screening_model = xgb.XGBClassifier(**_default_xgb_params(scale_pos_weight))
+    _screening_model.fit(X_train, y_train, eval_set=[(X_valid, y_valid)], verbose=False)
+    _importance_series = pd.Series(
+        _screening_model.feature_importances_, index=X_train.columns
+    )
+    zero_importance_cols = _importance_series[_importance_series == 0].index.tolist()
+
+    if zero_importance_cols:
+        print(f"[INFO] 移除 {len(zero_importance_cols)} 個 importance=0 的特徵: {zero_importance_cols[:10]}{'...' if len(zero_importance_cols) > 10 else ''}")
+        X       = X.drop(columns=zero_importance_cols, errors="ignore")
+        test_X  = test_X.drop(columns=zero_importance_cols, errors="ignore")
+        X_train = X_train.drop(columns=zero_importance_cols, errors="ignore")
+        X_valid = X_valid.drop(columns=zero_importance_cols, errors="ignore")
+        print(f"[INFO] 篩選後特徵數: {X.shape[1]}")
+    else:
+        print("[INFO] 沒有 importance=0 的特徵，跳過篩選")
 
     # --- 超參數調優或使用手動參數 ---
     best_params = tune_xgb_with_optuna(
@@ -756,7 +775,7 @@ def main(
     # 建議先看 full vs no_leak 的分數差距：
     # - 差距大 → 有明顯 leakage，no_leak 的分數更可信
     # - 差距小 → leakage 影響不大，full 的特徵可以放心用
-    modes   = ["full", "no_leak", "safe"]
+    modes   = ["full"] # "no_leak", "safe"
     results = []
 
     for mode in modes:

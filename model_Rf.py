@@ -564,7 +564,7 @@ def main(
     print(f"[INFO] test_df shape : {test_df.shape}")
     print(f"[INFO] 正樣本比例    : {train_df[TARGET_COL].mean():.4f}")
 
-    modes   = ["full", "no_leak", "safe"]
+    modes   = ["full"] # , "no_leak", "safe"
     results = []
 
     for mode in modes:

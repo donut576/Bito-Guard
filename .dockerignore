@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# 虛擬環境
+.venv/
+venv/
+env/
+
+# 資料檔（不進 image，從 S3 讀取）
+*.csv
+output_results/
+output_explanation/
+output_xgb*/
+
+# 前端
+aml-frontend/node_modules/
+aml-frontend/dist/
+
+# 測試 & 開發工具
+tests/
+.hypothesis/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Git
+.git/
+.gitignore
+
+# SageMaker notebook（不需要進 API image）
+sagemaker/
+
+# 部署腳本（不需要進 image）
+deploy/
+
+# 環境變數（絕對不能進 image）
+.env
+.env.*

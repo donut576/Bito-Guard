@@ -170,6 +170,38 @@ uvicorn app.main:app --reload
 | `PSI_WARNING_THRESHOLD` | `0.1` | Drift 警告門檻 |
 | `PSI_CRITICAL_THRESHOLD` | `0.2` | Drift 嚴重門檻 |
 
+### 部署到 Render
+
+本專案已提供 `render.yaml`（Render Blueprint），可一次建立：
+
+- `aml-api`（FastAPI Web Service）
+- `aml-frontend`（Vite Static Site）
+- `aml-redis`（Redis）
+- `aml-postgres`（PostgreSQL）
+
+#### 1) 匯入 Blueprint
+
+1. 將此 repo push 到 GitHub。
+2. 到 Render 選 **New + → Blueprint**。
+3. 選取此 repo，Render 會自動讀取 `render.yaml`。
+
+#### 2) 設定必要環境變數
+
+建立服務後，請在 Render Console 補上：
+
+- `aml-api`：
+    - `MODEL_S3_URI`（你的模型路徑，例如 `s3://aml-models/model_registry/latest`）
+- `aml-frontend`：
+    - `VITE_API_BASE_URL`（填 `aml-api` 的公開 URL，例如 `https://aml-api.onrender.com`）
+
+> `DATABASE_URL` 與 `REDIS_URL` 會由 Blueprint 自動綁定到 Render 的 PostgreSQL/Redis 資源。
+
+#### 3) 驗證部署
+
+- API 健康檢查：`https://<your-api>/health`
+- API 文件：`https://<your-api>/docs`
+- 前端站點：`https://<your-frontend>`
+
 ---
 
 ## 特徵工程說明（feature_engineering.py）

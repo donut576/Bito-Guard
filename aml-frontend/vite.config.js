@@ -16,4 +16,8 @@ export default defineConfig({
       '/cache': 'http://localhost:8000',
     },
   },
+  // production build 時從環境變數注入 API base URL
+  define: {
+    __API_BASE_URL__: JSON.stringify(process.env.VITE_API_BASE_URL ?? ''),
+  },
 });

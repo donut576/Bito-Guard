@@ -6,12 +6,21 @@ run_all_models.py
 
 使用方式：
   python run_all_models.py
-  python run_all_models.py --no-optuna   # 跳過 Optuna 調參，用預設參數（快）
-  python run_all_models.py --mode safe   # 只跑 safe mode
+  python run_all_models.py --no-optuna          # 跳過 Optuna 調參，用預設參數（快）
+  python run_all_models.py --mode safe          # 只跑 safe mode
+  python run_all_models.py --s3-bucket my-bucket  # 訓練完自動上傳結果到 S3
+  python run_all_models.py --s3-download        # 先從 S3 下載 feature CSV 再訓練
+
+AWS 整合說明：
+  - 設定環境變數 AML_S3_BUCKET 或傳入 --s3-bucket 參數
+  - feature CSV 預期放在 s3://<bucket>/data/train_feature.csv 等路徑
+  - 訓練結果會上傳到 s3://<bucket>/output/<model>/<mode>/
+  - summary.csv 上傳到 s3://<bucket>/output/summary.csv
 """
 import argparse
 import json
 import os
+import pathlib
 import sys
 
 import numpy as np
@@ -21,11 +30,45 @@ import pandas as pd
 TRAIN_PATH = "train_feature.csv"
 TEST_PATH  = "test_feature.csv"
 
+
+def _s3_client(region: str = "ap-northeast-1"):
+    import boto3
+    return boto3.client("s3", region_name=region)
+
+
+def download_features_from_s3(bucket: str, region: str = "ap-northeast-1") -> None:
+    """從 S3 下載 feature CSV 到本地（若本地已存在則跳過）。"""
+    s3 = _s3_client(region)
+    for fname in [TRAIN_PATH, TEST_PATH]:
+        if os.path.exists(fname):
+            print(f"[S3] {fname} 已存在，跳過下載")
+            continue
+        s3_key = f"data/{fname}"
+        print(f"[S3] 下載 s3://{bucket}/{s3_key} → {fname}")
+        s3.download_file(bucket, s3_key, fname)
+        print(f"[S3] ✓ {fname}")
+
+
+def upload_results_to_s3(out_base: str, bucket: str, region: str = "ap-northeast-1") -> None:
+    """將 output_results/ 下所有檔案上傳到 s3://<bucket>/output/。"""
+    s3 = _s3_client(region)
+    root = pathlib.Path(out_base)
+    uploaded = 0
+    for local_file in root.rglob("*"):
+        if not local_file.is_file():
+            continue
+        s3_key = "output/" + str(local_file.relative_to(root)).replace("\\", "/")
+        s3.upload_file(str(local_file), bucket, s3_key)
+        uploaded += 1
+    print(f"[S3] ✓ 上傳 {uploaded} 個檔案 → s3://{bucket}/output/")
+
+
 def check_csvs():
     missing = [p for p in [TRAIN_PATH, TEST_PATH] if not os.path.exists(p)]
     if missing:
         print(f"[ERROR] 找不到以下檔案：{missing}")
         print("[ERROR] 請先執行：python feature_engineering.py")
+        print("[ERROR] 或加上 --s3-download 從 S3 下載")
         sys.exit(1)
 
 # ── SHAP 計算並輸出 JSON ───────────────────────────────────
@@ -315,7 +358,20 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--no-optuna", action="store_true", help="Skip Optuna, use default params")
     parser.add_argument("--mode", default="all", choices=["all", "safe", "no_leak", "full"])
+    parser.add_argument("--s3-bucket", default=os.environ.get("AML_S3_BUCKET", ""), help="S3 bucket 名稱")
+    parser.add_argument("--s3-download", action="store_true", help="從 S3 下載 feature CSV 再訓練")
+    parser.add_argument("--s3-upload", action="store_true", help="訓練完後上傳結果到 S3")
+    parser.add_argument("--aws-region", default=os.environ.get("AWS_DEFAULT_REGION", "ap-northeast-1"))
     args = parser.parse_args()
+
+    s3_bucket = args.s3_bucket
+
+    # ── 從 S3 下載 feature CSV（若指定）──────────────────────
+    if args.s3_download:
+        if not s3_bucket:
+            print("[ERROR] --s3-download 需要指定 --s3-bucket 或設定 AML_S3_BUCKET 環境變數")
+            sys.exit(1)
+        download_features_from_s3(s3_bucket, args.aws_region)
 
     check_csvs()
     use_optuna = not args.no_optuna
@@ -363,6 +419,16 @@ def main():
         print("SUMMARY")
         print(summary.to_string(index=False))
         print(f"\n[DONE] Results saved to {out_base}/")
+
+    # ── 上傳結果到 S3（若指定）────────────────────────────────
+    do_upload = args.s3_upload or bool(s3_bucket and not args.s3_download)
+    if do_upload and s3_bucket:
+        try:
+            upload_results_to_s3(out_base, s3_bucket, args.aws_region)
+        except Exception as e:
+            print(f"[WARN] S3 上傳失敗（不影響本地結果）: {e}")
+    elif do_upload and not s3_bucket:
+        print("[WARN] 未指定 S3 bucket，跳過上傳。請設定 AML_S3_BUCKET 或傳入 --s3-bucket")
 
 
 if __name__ == "__main__":

@@ -191,6 +191,11 @@ def create_app() -> FastAPI:
     app.include_router(copilot_router.router)
     app.include_router(monitoring_router.router)
 
+    @app.get("/health", include_in_schema=False)
+    async def health() -> dict:
+        """App Runner / ALB 健康檢查端點。"""
+        return {"status": "ok", "version": app.version}
+
     @app.get("/metrics", include_in_schema=False)
     async def metrics() -> Response:
         return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)

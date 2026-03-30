@@ -1,6 +1,8 @@
 /** API endpoint definitions */
 
-const BASE = '';
+// 本地開發：空字串（走 vite proxy）
+// Production build：從 VITE_API_BASE_URL 環境變數注入
+const BASE = import.meta.env.VITE_API_BASE_URL ?? '';
 
 export const ENDPOINTS = {
   metrics:    (mode, model = 'xgb') => `${BASE}/metrics?mode=${mode}&model=${model}`,
